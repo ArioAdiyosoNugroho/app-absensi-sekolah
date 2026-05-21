@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\Classes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -17,8 +16,7 @@ class UserController extends Controller
 
     public function create()
     {
-        $classes = Classes::all();
-        return view('user.create', compact('classes'));
+        return view('user.create');
     }
 
     public function store(Request $request)
@@ -31,10 +29,9 @@ class UserController extends Controller
             'nis' => 'nullable|unique:users',
             'nip' => 'nullable|unique:users',
             'phone' => 'nullable|string|max:20',
-            'class_id' => 'nullable|exists:classes,id',
         ]);
 
-        $user = User::create([
+        User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
@@ -44,18 +41,13 @@ class UserController extends Controller
             'phone' => $validated['phone'] ?? null,
         ]);
 
-        if ($request->filled('class_id')) {
-            $user->classes()->attach($request->class_id);
-        }
-
         return redirect()->route('users.index')
             ->with('success', 'Pengguna berhasil ditambahkan.');
     }
 
     public function edit(User $user)
     {
-        $classes = Classes::all();
-        return view('user.edit', compact('user', 'classes'));
+        return view('user.edit', compact('user'));
     }
 
     public function update(Request $request, User $user)
@@ -69,7 +61,6 @@ class UserController extends Controller
             'nip' => 'nullable|unique:users,nip,' . $user->id,
             'phone' => 'nullable|string|max:20',
             'is_active' => 'boolean',
-            'class_id' => 'nullable|exists:classes,id',
         ]);
 
         $data = [
@@ -87,12 +78,6 @@ class UserController extends Controller
         }
 
         $user->update($data);
-
-        if ($request->filled('class_id')) {
-            $user->classes()->sync([$request->class_id]);
-        } else {
-            $user->classes()->detach();
-        }
 
         return redirect()->route('users.index')
             ->with('success', 'Pengguna berhasil diperbarui.');

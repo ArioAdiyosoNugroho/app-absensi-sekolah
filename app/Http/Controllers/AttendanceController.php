@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Attendance;
 use App\Models\SchoolLocation;
 use App\Models\AttendanceSetting;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class AttendanceController extends Controller
@@ -57,16 +59,6 @@ class AttendanceController extends Controller
             ]);
         }
 
-        $existing = Attendance::where('user_id', Auth::id())
-            ->whereDate('date', today())->first();
-
-        if ($existing && $existing->check_in_time) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda sudah melakukan check in hari ini.',
-            ]);
-        }
-
         $photoPath = $this->saveBase64Photo($request->photo, 'check_in');
 
         $checkInTime = now();
@@ -81,30 +73,56 @@ class AttendanceController extends Controller
             }
         }
 
-        $data = [
-            'user_id' => Auth::id(),
-            'date' => today(),
-            'check_in_time' => $checkInTime->format('H:i:s'),
-            'check_in_latitude' => $request->latitude,
-            'check_in_longitude' => $request->longitude,
-            'check_in_photo' => $photoPath,
-            'status' => $status,
-            'late_minutes' => $lateMinutes,
-        ];
+        // Gunakan database transaction dengan lock untuk cegah race condition
+        try {
+            DB::beginTransaction();
 
-        if ($existing) {
-            $existing->update($data);
-        } else {
-            Attendance::create($data);
+            $existing = Attendance::where('user_id', Auth::id())
+                ->whereDate('date', today())
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing && $existing->check_in_time) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda sudah melakukan check in hari ini.',
+                ]);
+            }
+
+            $data = [
+                'user_id' => Auth::id(),
+                'date' => today(),
+                'check_in_time' => $checkInTime->format('H:i:s'),
+                'check_in_latitude' => $request->latitude,
+                'check_in_longitude' => $request->longitude,
+                'check_in_photo' => $photoPath,
+                'status' => $status,
+                'late_minutes' => $lateMinutes,
+            ];
+
+            if ($existing) {
+                $existing->update($data);
+            } else {
+                Attendance::create($data);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Check in berhasil!',
+                'status' => $status,
+                'time' => $checkInTime->format('H:i:s'),
+                'late_minutes' => $lateMinutes,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan. Silakan coba lagi.',
+            ]);
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Check in berhasil!',
-            'status' => $status,
-            'time' => $checkInTime->format('H:i:s'),
-            'late_minutes' => $lateMinutes,
-        ]);
     }
 
     public function checkOut(Request $request)
@@ -132,44 +150,59 @@ class AttendanceController extends Controller
             ]);
         }
 
-        $attendance = Attendance::where('user_id', Auth::id())
-            ->whereDate('date', today())->first();
+        try {
+            DB::beginTransaction();
 
-        if (!$attendance || !$attendance->check_in_time) {
+            $attendance = Attendance::where('user_id', Auth::id())
+                ->whereDate('date', today())
+                ->lockForUpdate()
+                ->first();
+
+            if (!$attendance || !$attendance->check_in_time) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda belum melakukan check in hari ini.',
+                ]);
+            }
+
+            if ($attendance->check_out_time) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda sudah melakukan check out hari ini.',
+                ]);
+            }
+
+            $photoPath = $this->saveBase64Photo($request->photo, 'check_out');
+
+            $checkOutTime = now();
+            $checkInTime = \Carbon\Carbon::parse($attendance->check_in_time);
+            $duration = $checkInTime->diffInMinutes($checkOutTime);
+
+            $attendance->update([
+                'check_out_time' => $checkOutTime->format('H:i:s'),
+                'check_out_latitude' => $request->latitude,
+                'check_out_longitude' => $request->longitude,
+                'check_out_photo' => $photoPath,
+                'duration_minutes' => $duration,
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Check out berhasil!',
+                'time' => $checkOutTime->format('H:i:s'),
+                'duration' => $duration,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Anda belum melakukan check in hari ini.',
+                'message' => 'Terjadi kesalahan. Silakan coba lagi.',
             ]);
         }
-
-        if ($attendance->check_out_time) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda sudah melakukan check out hari ini.',
-            ]);
-        }
-
-        $photoPath = $this->saveBase64Photo($request->photo, 'check_out');
-
-        $checkOutTime = now();
-
-        $checkInTime = \Carbon\Carbon::parse($attendance->check_in_time);
-        $duration = $checkInTime->diffInMinutes($checkOutTime);
-
-        $attendance->update([
-            'check_out_time' => $checkOutTime->format('H:i:s'),
-            'check_out_latitude' => $request->latitude,
-            'check_out_longitude' => $request->longitude,
-            'check_out_photo' => $photoPath,
-            'duration_minutes' => $duration,
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Check out berhasil!',
-            'time' => $checkOutTime->format('H:i:s'),
-            'duration' => $duration,
-        ]);
     }
 
     private function calculateDistance($lat1, $lon1, $lat2, $lon2)

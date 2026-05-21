@@ -9,3 +9,12 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+.leaflet-container {
+    z-index: 1;
+}
+
+.school-marker {
+    background: transparent !important;
+    border: none !important;
+}

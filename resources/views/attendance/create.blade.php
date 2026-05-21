@@ -136,6 +136,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let stream = null;
     let isLocationValid = false;
     let isPhotoTaken = false;
+    let isSubmitting = false;
 
     const mapEl = document.getElementById('map');
     const submitBtn = document.getElementById('submit-btn');
@@ -306,8 +307,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     submitBtn.addEventListener('click', function() {
-        if (submitBtn.disabled) return;
-
+        if (isSubmitting) return;
+        isSubmitting = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = `
             <svg class="animate-spin w-5 h-5 mx-auto" fill="none" viewBox="0 0 24 24">
@@ -348,6 +349,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </a>`;
                 document.getElementById('attendance-form').remove();
             } else {
+                isSubmitting = false;
                 errorText.textContent = data.message;
                 errorText.classList.remove('hidden');
                 submitBtn.disabled = false;
@@ -355,6 +357,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
         .catch(err => {
+            isSubmitting = false;
             errorText.textContent = 'Terjadi kesalahan. Silakan coba lagi.';
             errorText.classList.remove('hidden');
             submitBtn.disabled = false;

@@ -51,11 +51,6 @@ class User extends Authenticatable
         return $this->hasMany(Permission::class, 'approved_by');
     }
 
-    public function classes()
-    {
-        return $this->belongsToMany(Classes::class, 'class_user');
-    }
-
     public function announcements()
     {
         return $this->hasMany(Announcement::class, 'created_by');
